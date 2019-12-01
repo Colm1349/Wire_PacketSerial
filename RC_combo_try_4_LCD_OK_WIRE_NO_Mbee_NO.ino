@@ -777,14 +777,14 @@ void OLED_Display_Dynamic_Data()
   String buffer2 = "-200"; // goto
   //  buffer1 = Compiler_for_OLED (Speed_1_raw);
   //  buffer2 = Compiler_for_OLED (Speed_2_raw);
-  buffer1 = Compiler_for_OLED (Speed_1_raw);  // 1
+  buffer1 = Compiler_for_OLED (Telemetry_Pack_From_RX[0]);  // 1
   
   DEBUG.print("TX_Telemetry_Pack_From_RX[0]= ");
   DEBUG.println(Telemetry_Pack_From_RX[0]);
 //  DEBUG.print("Speed_1_Raw= ");
 //  DEBUG.println(Speed_1_raw);
   
-  buffer2 = Compiler_for_OLED (Telemetry_Pack_From_RX[0]);  // 3
+  buffer2 = Compiler_for_OLED (Telemetry_Pack_From_RX[1]);  // 3
   disp.setCursor(5, 1);
   disp.print(buffer1);
   disp.setCursor(12, 1);
