@@ -28,6 +28,7 @@ uint8_t Pack_From_TX [] = {0, 1, 2};
 const uint16_t remoteAddress = 0x0001;
 bool WireConnectionFlag = false;
 uint8_t Counter_From_RC = 0;
+uint8_t RX_counter = 0;
 
 void setup() {
   // put your setup code here, to run once:
@@ -162,14 +163,12 @@ void Check_Recieve_Buffer( bool WireFlag)
 }
 
 
-
-
-
 void Collect_Telemetry()
 {
   //fake collect
   Telemetry_Pack[0] = Counter_From_RC;
-  for (int i = 1; i < (sizeof(Telemetry_Pack) / sizeof(Telemetry_Pack[0]) ) ; i++)
+  Telemetry_Pack[1] = RX_counter;
+  for (int i = 2; i < (sizeof(Telemetry_Pack) / sizeof(Telemetry_Pack[0]) ) ; i++)
   {
     Telemetry_Pack[i] = random(0, 256);
   }
@@ -200,6 +199,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size)
   }
   DEBUG.println("");
   Counter_From_RC = tempBuffer[0];
+  RX_counter++;
   delay(100);
   return;
 }
