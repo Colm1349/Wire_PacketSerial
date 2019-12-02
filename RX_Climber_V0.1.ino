@@ -8,6 +8,7 @@
 #include <MBee.h>
 #include <SoftwareSerial.h>
 #include <PacketSerial.h>
+#include <AltSoftSerial.h>
 #include <avr/wdt.h>
 
 // ОПИСАНИЕ ЗАДАЧИ ДОБАВЬ!
@@ -25,7 +26,7 @@
 
 
 //For UNO
-#define PC_Debug nss2
+#define PC_Debug altSerial         // nss2
 #define MBee_Serial Serial
 
 //For MEGA
@@ -34,6 +35,8 @@
 
 //Const
 #define EmergencyStopCode 52
+#define BOOST_Code_ON  42
+#define BOOST_Code_OFF 41
 #define Stop 0
 #define Forward 5
 #define Backward 2
@@ -64,17 +67,19 @@
 //Digital PINs
 #define Permission_Of_Move 2
 #define Direction_Of_Move  3
-#define ForwardLed 4
-#define BackwardLed 5
-#define PWM_Pin 6
-#define BUZZER_PIN 7
+#define ForwardLed         4
+#define BackwardLed        5
+#define PWM_Pin            6
+#define BUZZER_PIN         7
+#define ssRX               8
+#define ssTx               9
 // 8 + 9 -> RX/TX Software Serial for DEBUG
 #define Wire_Connection_Check_Pin 10
-#define LedDebug 12
-#define LedLimited 11
-#define systemLed 13
-int statusLed = LED_BUILTIN;
+#define Red_Led_Battery_lvl    11
+#define Yellow_Led_Battery_lvl 12
+#define Green_Led_Battery_lvl  13
 
+//Wireless settings + values
 int SpeedValue_Now = ZeroPWM; //stop command
 int Step_For_Move = 0;
 //CounterRxPackets (0),Speed_1H/L (1-2) , Speed_2H/L (3-4), I_1H/L (5-6), I_2H/L (7-8), V_Roper_H/L (9-10), PWM_Value (11), Direction (12)
@@ -86,14 +91,11 @@ TxRequest tx = TxRequest(); //Пакет с данными для отправк
 TxStatusResponse txStatus = TxStatusResponse(); //Локальный ответ со статусом команды.
 RxAcknowledgeResponse remoteRxStatus = RxAcknowledgeResponse(); //Пакет с подтверждением от удаленного модема получение данных.
 
-//int Permission_Of_Move = 2; // orange wire - debug
-//int Direction_Of_Move = 3; // yellow wire - debug 111
+//
 int InputValue = 0;
 int CounterOfPacketsFromTx = 0;
 uint8_t option = 0;
 uint8_t data = 0;
-uint8_t ssRX = 8;
-uint8_t ssTX = 9;
 int cntr = 0;
 int Counter_To_Start_WDT = 0;
 int E1 = 0; // Failed Checksum
@@ -117,76 +119,48 @@ int Speed_1 = 0;
 int Current_2 = 0;
 int Speed_2 = 0;
 int BatteryCharge = 0;
-//SoftwareSerial nss(ssRX, ssTX);
-SoftwareSerial nss2(ssRX, ssTX);
+//SoftwareSerial nss2(ssRX, ssTX);
 PacketSerial WireSerial;
+AltSoftSerial altSerial;
 
 //Обработка прерывания по переполнению счётчика. Должны пищалкой пищать
-ISR(TIMER2_OVF_vect)
-{
-  cli();
-  TCCR2B = 0b00000000; // STOP COUNT!!
-  // it means no signal from RC
-  Counter_To_Start_WDT++; // overflow  x1000 then start WDT.
-  if (Counter_To_Start_WDT > 1000)
-  {
-    //ALARM
-    Alarm_ON();
-    if (WDT_ACTIVE == false)
-    {
-      // no wdt plz!
-      wdt_enable(WDTO_4S); // WDT ENABLE!
-      // no wdt plz!
-
-      WDT_ACTIVE = true;
-    }
-    Counter_To_Start_WDT = 0;
-    //Stop NOW
-    digitalWrite(Direction_Of_Move , LOW);
-    digitalWrite(Permission_Of_Move, LOW);
-    SpeedValue_Now = ZeroPWM;
-    analogWrite(PWM_Pin , SpeedValue_Now);
-  }
-  //it must rotate non stop
-  if (FLAG_Release_Command == false)
-  {
-    if (cntr > 300)
-    {
-      FLAG_Release_Command = true;
-      cntr = 0;
-    }
-    else cntr++;
-  }
-  TCCR2B = 0b00000011; // START COUNT!!
-  sei();
-}
-
-//ISR(TIMER2_COMPA_vect)
+// MAIN
+//ISR(TIMER2_OVF_vect)
 //{
-//  //need text
 //  cli();
-//  int x = 240;
-//  TCCR2B = 0b00000000;
-//  static int counter_t0 = 0;
-//  int val = 0;
-//  // digitalWrite(LedDebug, !digitalRead(LedDebug));
-//  // PC_Debug.print("____________T2_COMPA TCNT0 == ");
-//  // PC_Debug.println(TCNT2);
-//  // delay(500);
-//  if (counter_t0 > 5)
+//  TCCR2B = 0b00000000; // STOP COUNT!!
+//  // it means no signal from RC
+//  Counter_To_Start_WDT++; // overflow  x1000 then start WDT.
+//  if (Counter_To_Start_WDT > 1000)
 //  {
-//    counter_t0 = 0;
-//    PC_Debug.println();
-//    PC_Debug.print("TCNT2-> ");
-//    PC_Debug.println(TCNT2);
-//    Command_To_Motor(InputValue);
-//    counter_t0 = 0;
+//    //ALARM
+//    Alarm_ON();
+//    if (WDT_ACTIVE == false)
+//    {
+//      // no wdt plz!
+////      wdt_enable(WDTO_4S); // WDT ENABLE!
+//      // no wdt plz!
+//
+//      WDT_ACTIVE = true;
+//    }
+//    Counter_To_Start_WDT = 0;
+//    //Stop NOW
+//    digitalWrite(Direction_Of_Move , LOW);
+//    digitalWrite(Permission_Of_Move, LOW);
+//    SpeedValue_Now = ZeroPWM;
+//    analogWrite(PWM_Pin , SpeedValue_Now);
 //  }
-//  counter_t0++;
-//  //Command_To_Motor(InputValue);
-//  //Command Release
-//  //  Execute_The_Command(SpeedValue_Now);
-//  TCCR2B = 0b00000011;
+//  //it must rotate non stop
+//  if (FLAG_Release_Command == false)
+//  {
+//    if (cntr > 300)
+//    {
+//      FLAG_Release_Command = true;
+//      cntr = 0;
+//    }
+//    else cntr++;
+//  }
+//  TCCR2B = 0b00000011; // START COUNT!!
 //  sei();
 //}
 
@@ -231,16 +205,27 @@ void setup()
   pinMode(ADCpin_Current1, INPUT);    // A7
 
   //Digital Pins setup
-  pinMode(statusLed, OUTPUT);
-  //  pinMode(errorLed, OUTPUT);
-  pinMode(Permission_Of_Move, OUTPUT);
-  pinMode(Direction_Of_Move, OUTPUT);
-  pinMode(LedLimited, OUTPUT);
-  pinMode(LedDebug, OUTPUT);
-  pinMode(Wire_Connection_Check_Pin, INPUT);
+  pinMode(Permission_Of_Move, OUTPUT);             // 2
+  pinMode(Direction_Of_Move, OUTPUT);              // 3
+  pinMode(ForwardLed, OUTPUT);                     // 4
+  pinMode(BackwardLed, OUTPUT);                    // 5
+  //PWM_Pin for Escons                             // 6
+  pinMode(BUZZER_PIN, OUTPUT);                     // 7
+  // 8 ssRx 9 ssTx for Software Debug              // 8 - 9
+  pinMode(Wire_Connection_Check_Pin, INPUT);       // 10
+  pinMode(Red_Led_Battery_lvl, OUTPUT);            // 11
+  pinMode(Yellow_Led_Battery_lvl, OUTPUT);         // 12
+  pinMode(Green_Led_Battery_lvl, INPUT);           // 13
+
+  //Settings for MBEE
+  // if (Check_Mbee_Connection() == true)
+  //  {
+  //   setDefault_parameters_For_Mbee(); // AP = 6, no sleep,
+  setDefault_TX_Power_Level();
+  //  }
 
   //Serials setup
-  PC_Debug.begin(115200);
+  PC_Debug.begin(9600);
   MBee_Serial.begin(115200);
   while (!Serial);
   WireSerial.begin(115200);
@@ -257,22 +242,25 @@ void setup()
   //  TCCR0A = 0b00000011; //0b00000000 -> Normal режим (никаких ШИМ) / Не ставили условий для ноги OC1A(12)
   //  TCCR0B = 0b00000011;  // WGM12 == 1 -> [0100] - режим счета импульсов (OCR1A) (сброс при совпадении) + 101 - CLK/1024 == 0b00001101;
 
+  //MAIN
   //Настройка таймера 2 (T2)
-  TCNT2 = 0;       //  Это просто регистр со значениями куда всё тикает
-  OCR2A =  100;    //уставка в регистр
-  TIMSK2 = 0b00000001;  //0b00000001 - TOIE - до переполнения  + 0b00000010 до уставки в OCR2A // ИЛИ -> TIMSK2 = 1; ИЛИ -> TIMSK2 |= (1 << TOIE2);
-  TCCR2A = 0;      // 0b00000000 -> Normal режим (никаких ШИМ) / Не ставили условий для ноги OC0A(12)
-  TCCR2B = 0b00000011;  //START_TIMER -> 0b10 -> clk/8 (CS02 / CS01 / CS00) START_TIMER
+  //  TCNT2 = 0;       //  Это просто регистр со значениями куда всё тикает
+  //  OCR2A =  100;    //уставка в регистр
+  //  TIMSK2 = 0b00000001;  //0b00000001 - TOIE - до переполнения  + 0b00000010 до уставки в OCR2A // ИЛИ -> TIMSK2 = 1; ИЛИ -> TIMSK2 |= (1 << TOIE2);
+  //  TCCR2A = 0;      // 0b00000000 -> Normal режим (никаких ШИМ) / Не ставили условий для ноги OC0A(12)
+  //  TCCR2B = 0b00000011;  //START_TIMER -> 0b10 -> clk/8 (CS02 / CS01 / CS00) START_TIMER
+
+
+  //GOTO
+  //добавить посыл СТОП на двигатели без зажима тормозами. Уложись в 1-2 секунды!
+  Starting_Command_For_Motors();
+  Refresh_WireConnectionFlag_RX();
+  Send_Telemetry(WireConnectionFlag_RX); //starting scream
 
   PC_Debug.println();
   PC_Debug.println("___RX started!___");
-  //GOTO
-  //добавить посыл СТОП на двигатели без зажима тормозами. Уложись в 1-2 секунды!
-  //Starting_Command_For_Motors();
-  Refresh_WireConnectionFlag_RX();
-  Send_Telemetry(WireConnectionFlag_RX); //starting scream
   delay(500);  //Задержка не обязательна и вставлена для удобства работы с терминальной программой.
-  delay(1000); // ради отката назад при потере связи
+  //  delay(1000); // ради отката назад при потере связи
 }
 
 void loop()
@@ -284,14 +272,14 @@ void loop()
   //Connection Type check
   Refresh_WireConnectionFlag_RX();
   Set_SWITCHER_PIN ( WireConnectionFlag_RX );
-  //SWITCHER release
-   
+  PC_Debug.print("FlagWireConect-");
+  PC_Debug.println(WireConnectionFlag_RX);
+
   //Check connection type PIN and SEND telemetry
   if (WireConnectionFlag_RX == true)
   {
-    PC_Debug.print("Wire mode");
-    delay(4000);
-
+    PC_Debug.println("Wire mode");
+    //    delay(15);
     WireSerial.update();
     if (WireSerial.overflow())
     {
@@ -310,6 +298,7 @@ void loop()
   }
   else // WireConnectionFlag_RX == false
   {
+    PC_Debug.println("Wireless mode");
     tx.setPayload((uint8_t*)testArray); //Устанавливаем указатель на тестовый массив
     tx.setPayloadLength(sizeof(testArray));  //Устанавливаем длину поля данных
     mbee.readPacket(); //Постоянно проверяем наличие данных от модема.
@@ -359,7 +348,7 @@ void loop()
           InputValue = Stop;
           Release_The_Brakes = true;
           Command_To_Motor(InputValue);
-          PC_Debug.println("EMERGENCY STOP / Release_The_Brakes = 1");
+          PC_Debug.println(F("EMERGENCY STOP / Release_The_Brakes = 1"));
           //        bool WriteAllArrayFlag = false;
           //        Print_All_Array(size, WriteAllArrayFlag);
           delay(100);
@@ -374,7 +363,7 @@ void loop()
       }
       else
       {
-        PC_Debug.println("Corrupted frame (maybe )");
+        PC_Debug.println(F("Corrupted frame (maybe )"));
         E4 = E4 + 1;
         ChainComboErrors = ChainComboErrors + 1;
         delay(100);
@@ -410,11 +399,11 @@ void loop()
       int8_t size = rx.getDataLength();
       bool WriteAllArrayFlag = false;
       Print_All_Array(size, WriteAllArrayFlag);
-      flashLed(statusLed, 2, 100); //При разборе принятого пакета произошли ошибки.
+      //При разборе принятого пакета произошли ошибки.
     }
     if (ChainComboErrors >= 100 )
     {
-      PC_Debug.println("RESET ARDUINO. A terrible long combo ERRORS !!!"); //RESET
+      PC_Debug.println(F("RESET ARDUINO. A terrible long combo ERRORS !!!")); //RESET
       WDT_ACTIVE = true;
       wdt_enable(WDTO_15MS); // WDT ENABLE!
       delay(50);
@@ -450,6 +439,13 @@ void loop()
   }
   /////////////////////////////////////////////////////////////////
 
+  PC_Debug.print("CounterTX: ");
+  PC_Debug.println(CounterOfPacketsFromTx);
+  PC_Debug.print("Command: ");
+  PC_Debug.println(InputValue);
+  PC_Debug.println("END loop");
+  delay(50);
+  return;
 }
 
 // input command packet
@@ -457,12 +453,10 @@ void onPacketReceived(const uint8_t* buffer, size_t size)
 {
   if (WireConnectionFlag_RX != true)
   {
-    PC_Debug.println("Packet for Mbee processing, not my problem=)");
+    PC_Debug.println(F("Packet for Mbee processing, not my problem=)"));
     return;
   }
   Reset_Error_Timer_And_Check_WDT();
-  Alarm_OFF();
-  cli();
   PC_Debug.println("TX Packet is Read");
   uint8_t tempBuffer[size];
   // Copy the packet into our temporary buffer.
@@ -475,28 +469,44 @@ void onPacketReceived(const uint8_t* buffer, size_t size)
     PC_Debug.print("]=");
     PC_Debug.print(tempBuffer[i]);
     PC_Debug.print("; ");
+    if ( size >= 2)
+    {
+      if (i == 0) CounterOfPacketsFromTx = tempBuffer[i];
+      if (i == 1) InputValue = tempBuffer[i];
+    }
   }
   PC_Debug.println("");
-  InputValue = tempBuffer[1];  // 1ый( второй по смыслу) байт наша команда (куда ехать)
-  if (tempBuffer[3] == EmergencyStopCode)
-  {
-    InputValue = Stop;
-    Command_To_Motor(InputValue);
-    Release_The_Brakes = true;
-  }
-  else
-  Release_The_Brakes = false;
-  //  Counter_From_RC = tempBuffer[0];
-  //  RX_counter++;
+  delay(1);
+  //  PC_Debug.println("");
+  //  InputValue = tempBuffer[1];  // 1ый( второй по смыслу) байт наша команда (куда ехать)
+  //  if (tempBuffer[3] == EmergencyStopCode)
+  //  {
+  //    InputValue = Stop;
+  //    Command_To_Motor(InputValue);
+  //    Release_The_Brakes = true;
+  //    Release_The_Brakes = false;
+  //  }
+  //  if (tempBuffer[3] == BOOST_Code_ON)
+  //  {
+  //    //GOTO
+  //    BOOST_ON();
+  //  }
+  //  if (tempBuffer[3] == BOOST_Code_OFF)
+  //  {
+  //    //GOTO
+  //    BOOST_OFF();
+  //  }
+  //  Release_The_Brakes = false;
+  //  //  Counter_From_RC = tempBuffer[0];
+  //  //  RX_counter++;
   Packet_Received_Flag = true;
-  delay(100);
-  sei();
+  delay(10);
   return;
 }
 
 void Refresh_WireConnectionFlag_RX()
 {
-  PC_Debug.println("Refresh_WireConnectionFlag_TX!");
+  PC_Debug.println(F("Refresh_WireConnectionFlag_TX!"));
   bool First_WireConnection_Check = digitalRead(Wire_Connection_Check_Pin);
   if (WireConnectionFlag_RX != First_WireConnection_Check)
   {
@@ -525,7 +535,7 @@ void Set_SWITCHER_PIN(bool WireFlag)
   PC_Debug.println(WireFlag);
   if (WireFlag == true)
   {
-    digitalWrite(SWITCHER_PIN, LOW); // inverted COM(4) <-> NC (3) 
+    digitalWrite(SWITCHER_PIN, LOW); // inverted COM(4) <-> NC (3)
     PC_Debug.println("Radio_Led LOW");
     delay(5);
   }
@@ -538,13 +548,14 @@ void Set_SWITCHER_PIN(bool WireFlag)
   return;
 }
 
-void Send_Telemetry( bool WireFlag_RX)
+void Send_Telemetry( bool WireFlag_RX )
 {
 
   if (WireFlag_RX == true)
   {
-    PC_Debug.print("Wire Connect...wait");
-    delay(4000);
+    PC_Debug.println("Wire Connect...wait");
+    // No send!
+    delay(4);
   }
   else
   {
@@ -609,7 +620,6 @@ void Command_To_Motor(int instruction)
       SpeedValue_Now = ZeroPWM;
       Step_For_Move = 0;  // command complete
       //PC_Debug.println("STOP NOW");
-      digitalWrite(LedLimited, LOW);
     }
     //Debug
     PC_Debug.print("(Stopping)Speed == ");
@@ -636,7 +646,6 @@ void Command_To_Motor(int instruction)
     {
       SpeedValue_Now = Max_SpeedValue;
       Step_For_Move = 0;  //command complete
-      digitalWrite(LedLimited, HIGH);
       //PC_Debug.println("Max Speed RIGHT NOW! LvL UP! ");
     }
     //Debug
@@ -665,7 +674,6 @@ void Command_To_Motor(int instruction)
     {
       SpeedValue_Now = Min_SpeedValue;
       Step_For_Move = 0;  // command complete
-      digitalWrite(LedLimited, HIGH);
       //PC_Debug.println("We Reversed");
     }
     //Debug
@@ -690,7 +698,6 @@ void Execute_The_Command(int Speed)
       //      PC_Debug.println("FORWARD --->>>>");
       digitalWrite(ForwardLed, HIGH);
       digitalWrite(BackwardLed, LOW);
-      digitalWrite(systemLed, LOW);
     }
     if (Speed < ZeroPWM) //B
     {
@@ -701,7 +708,6 @@ void Execute_The_Command(int Speed)
       //      PC_Debug.println("<<<<--- BACKWARD");
       digitalWrite(ForwardLed, LOW);
       digitalWrite(BackwardLed, HIGH);
-      digitalWrite(systemLed, LOW);
     }
     if (Speed == ZeroPWM) //S
     {
@@ -714,7 +720,6 @@ void Execute_The_Command(int Speed)
         //      PC_Debug.println("|| STOP ||");
         digitalWrite(ForwardLed, LOW);
         digitalWrite(BackwardLed, LOW);
-        digitalWrite(systemLed, LOW);
       }
       else
       {
@@ -725,7 +730,6 @@ void Execute_The_Command(int Speed)
         //      PC_Debug.println("|| STOP ||");
         digitalWrite(ForwardLed, HIGH);
         digitalWrite(BackwardLed, HIGH);
-        digitalWrite(systemLed, HIGH);
       }
       if ( SuddenReverse == true);
       {
@@ -752,72 +756,6 @@ void Execute_The_Command(int Speed)
     //Debug on LEDs
     digitalWrite(ForwardLed, HIGH);
     digitalWrite(BackwardLed, HIGH);
-    digitalWrite(systemLed, HIGH);
-  }
-}
-
-void flashLed(int pin, int times, int wait)
-{
-  for (int i = 0; i < times; i++)
-  {
-    digitalWrite(pin, HIGH);
-    //    delay(wait);
-    delay(1);
-    digitalWrite(pin, LOW);
-    if (i + 1 < times)
-      //      delay(wait);
-      delay(1);
-  }
-}
-
-void getLocalResponse(uint16_t timeout)
-{
-  if (mbee.readPacket(timeout)) //Ждем ответа со статусом команды.
-  {
-    //    PC_Debug.print("getLocalResponse -> mbee.getResponse().getApiId() ==");
-    //    PC_Debug.println( mbee.getResponse().getApiId() );
-    if (mbee.getResponse().getApiId() == TRANSMIT_STATUS_API_FRAME) //Проверяем, является ли принятый пакет локальным ответом на AT-команду удаленному модему.
-    {
-      mbee.getResponse().getTxStatusResponse(txStatus);
-      if (txStatus.isSuccess())
-      {
-        //        PC_Debug.println("Пакет ушел в эфир");
-      }
-      else if (txStatus.getStatus() == TX_FAILURE_COMMAND_STATUS) // TX_FAILURE_COMMAND_STATUS == 4
-      {
-        //        PC_Debug.println("Пакет в эфир не ушел вследствие занятости канала");
-      }
-      else if (txStatus.getStatus() == ERROR_COMMAND_STATUS) // ERROR_COMMAND_STATUS == 1
-      {
-        //        PC_Debug.println("Недостаточно памяти для размещения пакета в буфере на передачу");
-      }
-    }
-  }
-}
-
-void getRemoteResponse(uint16_t timeout)
-{
-  if (mbee.readPacket(timeout)) //Ждем подтверждения получения данных от удаленного модуля.
-  {
-    //    PC_Debug.print("getRemoteResponse -> mbee.getResponse().getApiId() == ");
-    //    PC_Debug.println(mbee.getResponse().getApiId());
-    if (mbee.getResponse().getApiId() == REMOTE_ACKNOWLEDGE_API_FRAME) //Является ли полученный фрейм подтверждением доставки.
-    {
-      mbee.getResponse().getRxAcknowledgeResponse(remoteRxStatus);
-      if (remoteRxStatus.getFrameId() == tx.getFrameId()) //Проверяем,совпадает ли идентификатор фрейма в полученном подтверждении с идентификатором отправленного пакета.
-        flashLed(statusLed, 2, 200); //Подтверждение получено именно на отпправленный только что пакет. Все прекрасно.
-      else
-        flashLed(statusLed, 2, 200); //Идентификатор пакета в принятом подтверждении не совпал с идентификтором отправленного пакета.
-    }
-    else
-      flashLed(statusLed, 3, 200); //Принятый пакет не является пакетом подтверждения доставки.
-  }
-  else
-  {
-    if (mbee.getResponse().isError())
-      flashLed(statusLed, 4, 200); //В процессе разбора принятого пакета произошли ошибки.
-    else
-      flashLed(statusLed, 1, 2000); //Нет ответа от удаленного модема.
   }
 }
 
@@ -958,5 +896,65 @@ void Data_Send_To_Processing() {
   delay(30);
   return;
 }
+
+//TX_Power_Level
+bool setDefault_TX_Power_Level()  //
+{
+  /*
+    1) check connect to Mbee
+    2) if YES -> at pl 0x1F (11111 or 31) ~14dbm
+      if NO  -> return 1;
+    3) catch "OK"
+    4) if YES -> at ac
+      if NO  ->
+    5) catch "OK"
+    6) at pl
+    8) catch "0x1F" or 11111 or 31
+    7) if YES -> finish + return 0;
+      if NO  -> return 1
+  */
+
+  delay(1);
+  return 0;
+}
+
+void BOOST_ON()
+{
+  // Create CODE
+  /*
+    1) Check connect with Mbee
+    2) if YES -> at pl 0x81 /( 10000001 or 129 ) ~27 dbm for Mbee 2.0
+      if NO -> send telemetry BOOST_ON_Flag == false;
+    3) Catch answer like "OK"
+    4)  if YES -> at ac + wait ( delay(10?) )//write EEPROM
+       if NO -> send telemetry BOOST_ON_Flag == false;
+    5) check like "OK"
+    6)  if YES -> finish this function + return;
+       if NO  -> send telemetry BOOST_ON_Flag == false;
+  */
+
+  delay(1);
+  return;
+}
+
+void BOOST_OFF()
+{
+  // Create CODE
+  /*
+    1) Check connect with Mbee
+    2) if YES -> at pl 0x1F /( 11111 or 31 ) ~14 dbm for Mbee 2.0
+       if NO -> send telemetry BOOST_ON_Flag == false;
+    3) Catch answer like "OK"
+    4)  if YES -> at ac + wait ( delay(10?) )//write EEPROM
+       if NO -> send telemetry BOOST_ON_Flag == false;
+    5) check like "OK"
+    6)  if YES -> finish this function + return;
+       if NO  -> send telemetry BOOST_ON_Flag == false;
+  */
+
+  delay(2);
+  return;
+}
+
 
 //
